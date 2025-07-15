@@ -1,20 +1,17 @@
-import path from 'path';
 import fs from 'fs/promises';
 import { exec } from 'node:child_process';
 import express from 'express';
 import multer from 'multer';
-import { x } from 'tar';
-import unzipper from 'unzipper';
 import { randomUUID } from 'crypto';
 import passport from 'passport'
 import bcrypt from "bcrypt"
 import bodyParser from 'body-parser';
-
-import { HeaderAPIKeyStrategy } from 'passport-headerapikey';
-import { db } from './db/db.js';
-import { users } from './db/users.js';
 import { eq } from 'drizzle-orm';
+import { HeaderAPIKeyStrategy } from 'passport-headerapikey';
 
+import { db } from './src/db/db.js';
+import { users } from './src/db/users.js';
+import { extractUploadedFile } from './src/utils/files.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -57,8 +54,6 @@ app.post('/register', async (req, res) => {
   try {
     const [ user ] = await db.select().from(users).where(eq(users.email, email));
     if(user) {
-      console.log('user')
-      console.log(user)
       return res.status(409).json({ error:  'user already exists' });
     }
 
@@ -67,6 +62,10 @@ app.post('/register', async (req, res) => {
 
     // Génération API_KEY unique
     const api_key = randomUUID();
+
+    const workspace = `/tmp/workspaces/${api_key}`;
+    await fs.mkdir(workspace, { recursive: true });
+    console.log(`👉 user workspace created : ${workspace}`);
 
     await db.insert(users).values({
       email: email,
@@ -82,50 +81,21 @@ app.post('/register', async (req, res) => {
 });
 
 // TODO refactor this
-app.post(
-  '/prompt',
-  upload.single('file'),
-  passport.authenticate('headerapikey', { session: false }),
+app.post('/prompt',passport.authenticate('headerapikey', { session: false }), upload.single('file'),
   async (req, res) => {
   // TODO validate prompt input
   const { prompt } = req.body;
-  console.log(`👉 Received prompt: ${prompt}`);
-  // create temp workspace
   const workspaceId = req.user.api_key;
   const workspace = `/tmp/workspaces/${workspaceId}`;
   console.log(`👉 workspace : ${workspace}`);
-
-  try {
-    await fs.mkdir(workspace, { recursive: true });
-
-    if(req.file) {
-      console.log(`👉 Received file: ${file.originalname}`);
-      const { originalname, path: tempPath } = req.file;
-      const ext = path.extname(originalname);
-
-      if (![".zip", ".tar", ".tar.gz"].includes(ext)) {
-        await fs.unlink(tempPath);
-        return res.status(400).json({ error: "File must be zip or tar archive" });
-      }
-      // move archive to workspace
-      const archivePath = path.join(workspace, originalname);
-      await fs.rename(tempPath, archivePath);
-
-      // extract the archive
-      if (ext === '.tar') {
-        await x({
-          file: archivePath,
-          cwd: workspace
-        });
-      } else if (ext === '.zip') {
-        await fs.createReadStream(archivePath)
-          .pipe(unzipper.Extract({ path: workspace }))
-          .promise();
-      }
-      // delete the archive file
-      await fs.unlink(archivePath)
+  if(req.file) {
+    try {
+      await extractUploadedFile(req.file, workspace)
+    } catch (error) {
+      res.status(400).json(`Error: ${error}`);
     }
-
+  }
+  try {
     // Call mcphost script with workspace
     const userScript = './mcphost.sh'; // Path to your script file
     const execCommand = `mcphost script ${userScript} --args:workspace "${workspace}" --args:prompt "${prompt}" --debug`;
@@ -133,7 +103,7 @@ app.post(
     const LLMoutput = await new Promise((resolve, reject) => {
       exec(execCommand, async (err, stdout, stderr) => {
         // Cleaning temp workspace
-        await fs.rm(workspace, { recursive: true, force: true });
+        await fs.rm(`${workspace}/*`, { recursive: true, force: true });
         if (err) {
           reject(stderr || stdout);
         } else {
