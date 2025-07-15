@@ -3,7 +3,7 @@
 mcpServers:
   blockchain:
     type: "local"
-    command: ["npx", "-y", "mcp-blockchain-server"]
+    command: ["npx", "-y", "btools-mcp-server"]
     environment:
       DEBUG: "${env://DEBUG:-false}"
   filesystem:

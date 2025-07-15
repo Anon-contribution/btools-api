@@ -33,7 +33,7 @@ COPY mcphost.sh /app/mcphost.sh
 # ✅ Copy Node backend dependencies
 # -----------------------------------------------
 COPY package.json ./
-COPY package-lock.json ./
+COPY yarn.lock ./
 
 # -----------------------------------------------
 # ✅ Install only production dependencies

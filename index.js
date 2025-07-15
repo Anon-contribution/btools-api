@@ -7,12 +7,14 @@ import { x } from 'tar';
 import unzipper from 'unzipper';
 import { randomUUID } from 'crypto';
 import passport from 'passport'
-import CustomBearerStrategy from 'passport-http-custom-bearer'
+import bcrypt from "bcrypt"
+import bodyParser from 'body-parser';
+
+import { HeaderAPIKeyStrategy } from 'passport-headerapikey';
 import { db } from './db/db.js';
 import { users } from './db/users.js';
 import { eq } from 'drizzle-orm';
-import bcrypt from "bcrypt"
-import bodyParser from 'body-parser';
+
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -20,32 +22,19 @@ const port = process.env.PORT || 3000;
 app.use(bodyParser.json())
 app.use(passport.initialize());
 
-app.use(function(err, req, res, next) {
-  console.log('request')
-  console.log(req)
-});
-
-// Configure Multer for file uploads
 const upload = multer({ dest: '/tmp/uploads/' });
-
-passport.use('api-bearer', new CustomBearerStrategy(
-  { 
-    headerName: 'api_key',
-    bodyName: 'api_key',
-  },
-  async function(token, done) {
-    console.log('try auth')
+/**
+ * expected header { "X-Api-Key": 'YOUR_API_KEY' }
+ */
+passport.use(new HeaderAPIKeyStrategy(null, false,
+  async function(apikey, done) {
     try {
-      const [ result ] = await db.select().from(users).where(eq(users.api_key, token));
-      console.log('result:')
-      console.log(result)
+      const [ result ] = await db.select().from(users).where(eq(users.api_key, apikey));
       if (!result) {
         return done(null, false);
       }
       return done(null, result, { scope: 'all' });
     } catch (error) {
-      console.log('error')
-      console.log(error)
       return done(error);
     }
   }
@@ -96,7 +85,7 @@ app.post('/register', async (req, res) => {
 app.post(
   '/prompt',
   upload.single('file'),
-  passport.authenticate('api-bearer', { session: false }),
+  passport.authenticate('headerapikey', { session: false }),
   async (req, res) => {
   // TODO validate prompt input
   const { prompt } = req.body;
