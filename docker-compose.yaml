@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    container_name: my_api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://btools_user:btools_pwd@db:5432/btools_db
+      - NODE_ENV=dev
+    depends_on:
+      - db
+    volumes:
+      - ./:/usr/src/app
+      - /usr/src/app/node_modules
+      - ollama-data:/root/.ollama/
+
+  db:
+    image: postgres:15-alpine
+    container_name: my_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: btools_user
+      POSTGRES_PASSWORD: btools_pwd
+      POSTGRES_DB: btools_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
+  ollama-data:
